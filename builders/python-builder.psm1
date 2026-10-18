@@ -41,10 +41,16 @@ class PythonBuilder {
     PythonBuilder ([semver] $version, [string] $architecture, [string] $platform) {
         $this.InstallationTemplatesLocation = Join-Path -Path $PSScriptRoot -ChildPath "../installers"
 
-        $this.HostedToolcacheLocation = $env:AGENT_TOOLSDIRECTORY
-        $this.TempFolderLocation = $env:BUILD_SOURCESDIRECTORY
-        $this.WorkFolderLocation = $env:BUILD_BINARIESDIRECTORY
-        $this.ArtifactFolderLocation = $env:BUILD_STAGINGDIRECTORY
+        $artifactDirectory = Join-Path $env:RUNNER_TEMP "artifact"
+        $workDirectory = Join-Path $env:RUNNER_TEMP "work"
+
+        New-Item -Force -Type Directory $artifactDirectory
+        New-Item -Force -Type Directory $workDirectory
+
+        $this.HostedToolcacheLocation = $env:RUNNER_TOOL_CACHE
+        $this.TempFolderLocation = $env:RUNNER_TEMP
+        $this.WorkFolderLocation =  $workDirectory
+        $this.ArtifactFolderLocation = $artifactDirectory
 
         $this.Version = $version
         $this.Architecture = $architecture
@@ -86,6 +92,24 @@ class PythonBuilder {
         #>
 
         return "$($this.Version.Major).$($this.Version.Minor).$($this.Version.Patch)"
+    }
+
+    [string] GetHardwareArchitecture() {
+        <#
+        .SYNOPSIS
+        The hardware architecture (x64, arm64) without any Python free threading suffix.
+        #>
+
+        return $this.Architecture.Replace("-freethreaded", "")
+    }
+
+    [bool] IsFreeThreaded() {
+        <#
+        .SYNOPSIS
+        Check if Python version is free threaded.
+        #>
+
+        return $this.Architecture.EndsWith("-freethreaded")
     }
 
     [void] PreparePythonToolcacheLocation() {

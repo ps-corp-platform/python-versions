@@ -1,5 +1,3 @@
-import distutils.sysconfig
-from distutils.version import StrictVersion
 import sysconfig
 import sys
 import platform
@@ -9,17 +7,35 @@ import os
 os_type = platform.system()
 version = sys.argv[1]
 nativeVersion = sys.argv[2]
+architecture = sys.argv[3]
+hw_architecture = architecture.replace('-freethreaded', '')
+
+versions=version.split(".")
+version_major=int(versions[0])
+version_minor=int(versions[1])
+
+pkg_installer = os_type == 'Darwin' and ((version_major == 3 and version_minor >= 11) or (hw_architecture == "arm64"))
 
 lib_dir_path = sysconfig.get_config_var('LIBDIR')
 ld_library_name = sysconfig.get_config_var('LDLIBRARY')
 
 is_shared = sysconfig.get_config_var('Py_ENABLE_SHARED')
 have_libreadline = sysconfig.get_config_var("HAVE_LIBREADLINE")
+is_free_threaded = sysconfig.get_config_var('Py_GIL_DISABLED')
 
 ### Define expected variables
 if os_type == 'Linux': expected_ld_library_extension = 'so'
 if os_type == 'Darwin': expected_ld_library_extension = 'dylib'
-expected_lib_dir_path = '{0}/Python/{1}/x64/lib'.format(os.getenv("AGENT_TOOLSDIRECTORY"), version)
+if is_free_threaded:
+    framework_name = 'PythonT.framework'
+else:
+    framework_name = 'Python.framework'
+
+if pkg_installer:
+    expected_lib_dir_path = f'/Library/Frameworks/{framework_name}/Versions/{version_major}.{version_minor}/lib'
+else:
+    tools_dir = os.getenv("AGENT_TOOLSDIRECTORY") or os.getenv("RUNNER_TOOL_CACHE")
+    expected_lib_dir_path = f'{tools_dir}/Python/{version}/{architecture}/lib'
 
 # Check modules
 ### Validate libraries path
@@ -30,7 +46,7 @@ if lib_dir_path != expected_lib_dir_path:
 ### Validate shared libraries
 if is_shared:
     print('%s was built with shared extensions' % ld_library_name)
-    
+
     ### Validate libpython extension
     ld_library_extension = ld_library_name.split('.')[-1]
     if ld_library_extension != expected_ld_library_extension:
@@ -38,33 +54,37 @@ if is_shared:
         exit(1)
 else:
     print('%s was built without shared extensions' % ld_library_name)
-    exit(1)
+    if not pkg_installer:
+        exit(1)
 
 ### Validate macOS
 if os_type == 'Darwin':
     ### Validate openssl links
-    if StrictVersion(nativeVersion) < StrictVersion("3.7.0"):
-        expected_ldflags = '-L/usr/local/opt/openssl@1.1/lib'
+    if version_major == 3 and version_minor < 7:
+        expected_ldflags = '-L/usr/local/opt/openssl@3/lib'
         ldflags = sysconfig.get_config_var('LDFLAGS')
 
         if not expected_ldflags in ldflags:
             print('Invalid ldflags: %s; Expected: %s' % (ldflags, expected_ldflags))
             exit(1)
     else:
-        expected_openssl_includes = '-I/usr/local/opt/openssl@1.1/include'
-        expected_openssl_ldflags ='-L/usr/local/opt/openssl@1.1/lib'
-        
+        expected_openssl_includes = '-I/usr/local/opt/openssl@3/include'
+        expected_openssl_ldflags ='-L/usr/local/opt/openssl@3/lib'
+
         openssl_includes = sysconfig.get_config_var('OPENSSL_INCLUDES')
         openssl_ldflags = sysconfig.get_config_var('OPENSSL_LDFLAGS')
 
         if openssl_includes != expected_openssl_includes:
             print('Invalid openssl_includes: %s; Expected: %s' % (openssl_includes, expected_openssl_includes))
-            exit(1)
+            if not pkg_installer:
+                exit(1)
         if openssl_ldflags != expected_openssl_ldflags:
             print('Invalid openssl_ldflags: %s; Expected: %s' % (openssl_ldflags, expected_openssl_ldflags))
-            exit(1)
+            if not pkg_installer:
+                exit(1)
 
 ### Validate libreadline
-if not have_libreadline:
-    print('Missing libreadline')
-    exit(1)
+if sys.version_info < (3, 12):
+    if not have_libreadline:
+        print('Missing libreadline')
+        exit(1)

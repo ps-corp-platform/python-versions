@@ -1,4 +1,4 @@
-using module "./builders/python-builder.psm1"
+using module "./python-builder.psm1"
 
 class NixPythonBuilder : PythonBuilder {
     <#
@@ -61,8 +61,7 @@ class NixPythonBuilder : PythonBuilder {
         Return name of Python binary.
         #>
 
-        if ($this.Version.Major -eq 2) { $pythonBinary = "python" } else { $pythonBinary = "python3" }
-        return $pythonBinary
+        return "python3"
     }
 
     [string] Download() {
@@ -74,7 +73,7 @@ class NixPythonBuilder : PythonBuilder {
         $sourceUri = $this.GetSourceUri()
         Write-Host "Sources URI: $sourceUri"
 
-        $archiveFilepath = Download-File -Uri $sourceUri -OutputFolder $this.WorkFolderLocation
+        $archiveFilepath = Download-File -Uri $sourceUri -OutputFolder $this.TempFolderLocation
         $expandedSourceLocation = Join-Path -Path $this.TempFolderLocation -ChildPath "SourceCode"
         New-Item -Path $expandedSourceLocation -ItemType Directory
 
@@ -97,6 +96,7 @@ class NixPythonBuilder : PythonBuilder {
 
         $variablesToReplace = @{
             "{{__VERSION_FULL__}}" = $this.Version;
+            "{{__ARCH__}}" = $this.Architecture;
         }
         $variablesToReplace.keys | ForEach-Object { $installationTemplateContent = $installationTemplateContent.Replace($_, $variablesToReplace[$_]) }
 
@@ -114,7 +114,7 @@ class NixPythonBuilder : PythonBuilder {
         Write-Debug "make Python $($this.Version)-$($this.Architecture) $($this.Platform)"
         $buildOutputLocation = New-Item -Path $this.WorkFolderLocation -Name "build_output.txt" -ItemType File
         
-        Execute-Command -Command "make 2>&1 | tee $buildOutputLocation" -ErrorAction Continue	
+        Execute-Command -Command "make 2>&1 | tee $buildOutputLocation" -ErrorAction Continue
         Execute-Command -Command "make install" -ErrorAction Continue
 
         Write-Debug "Done; Make log location: $buildOutputLocation"
@@ -146,6 +146,14 @@ class NixPythonBuilder : PythonBuilder {
         $sourcesLocation = $this.Download()
 
         Push-Location -Path $sourcesLocation
+
+        # Patch for 3.15.0a6: Fix test_bz2 BIG_DATA to ensure two compressed blocks
+        # See: https://github.com/python/cpython/pull/145730
+        if (($this.Architecture -match "arm64") -and ($this.Platform -match "22\.04") -and ($this.Version -eq [semver]"3.15.0-alpha.6")) {
+            Write-Host "Applying patch for python/cpython#145730 (test_bz2 fix)..."
+            Execute-Command -Command "curl -sL -o Lib/test/test_bz2.py https://raw.githubusercontent.com/python/cpython/19676e5fc28bdee8325a062a31ddeee60960cf75/Lib/test/test_bz2.py"
+        }
+
         Write-Host "Configure for $($this.Platform)..."
         $this.Configure()
 

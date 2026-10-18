@@ -3,12 +3,10 @@ Make sure all the optional modules are installed.
 This is needed for Linux since we build from source.
 """
 
-from __future__ import print_function
-
 import importlib
 import sys
 
-# The Python standard library as of Python 3.0
+# The Python standard library as of Python 3.9
 standard_library = [
     'abc',
     'aifc',
@@ -17,6 +15,7 @@ standard_library = [
     'ast',
     'asynchat',
     'asyncore',
+    'asyncio',
     'base64',
     'bdb',
     'binhex',
@@ -34,14 +33,17 @@ standard_library = [
     'collections',
     'colorsys',
     'compileall',
+    'concurrent',
     'configparser',
     'contextlib',
+    'contextvars',
     'copy',
     'copyreg',
     'crypt',
     'csv',
     'ctypes',
     'curses',
+    'dataclasses',
     'datetime',
     'dbm',
     'decimal',
@@ -49,9 +51,11 @@ standard_library = [
     'dis',
     'distutils',
     'doctest',
-    'dummy_threading',
     'email',
     'encodings',
+    'ensurepip',
+    'enum',
+    'faulthandler',
     'filecmp',
     'fileinput',
     'fnmatch',
@@ -77,13 +81,14 @@ standard_library = [
     'importlib',
     'inspect',
     'io',
+    'ipaddress',
     'json',
     'keyword',
     'lib2to3',
     'linecache',
     'locale',
     'logging',
-    'macpath',
+    'lzma',
     'mailbox',
     'mailcap',
     'mimetypes',
@@ -98,6 +103,7 @@ standard_library = [
     'operator',
     'optparse',
     'os',
+    'pathlib',
     'pdb',
     'pickle',
     'pickletools',
@@ -124,6 +130,8 @@ standard_library = [
     'rlcompleter',
     'runpy',
     'sched',
+    'secrets',
+    'selectors',
     'shelve',
     'shlex',
     'shutil',
@@ -141,6 +149,7 @@ standard_library = [
     'ssl',
     '_ssl',
     'stat',
+    'statistics',
     'string',
     'stringprep',
     'struct',
@@ -163,14 +172,17 @@ standard_library = [
     'tokenize',
     'trace',
     'traceback',
+    'tracemalloc',
     'tty',
     'turtle',
     'turtledemo',
     'types',
+    'typing',
     'unittest',
     'urllib',
     'uu',
     'uuid',
+    'venv',
     'warnings',
     'wave',
     'weakref',
@@ -179,86 +191,61 @@ standard_library = [
     'xdrlib',
     'xml',
     'xmlrpc',
+    'zipapp',
     'zipfile'
 ]
 
-# Modules that had different names in Python 2
-if sys.version_info.major == 2:
-    def replace(lst, old, new):
-        lst[lst.index(old)] = new
-
-    # Keys are the Python 2 names
-    # Values are the Python 3 names
-    renames = {
-        'ConfigParser': 'configparser',
-        'copy_reg': 'copyreg',
-        'HTMLParser': 'html',
-        'httplib': 'http',
-        'Queue': 'queue',
-        'repr': 'reprlib',
-        'SocketServer': 'socketserver',
-        'xmlrpclib': 'xmlrpc',
-        'Tkinter': 'tkinter'
-    }
-
-    # All of the Python 3 names should be in the list
-    for python2name, python3name in renames.items():
-        replace(standard_library, python3name, python2name)
-
 # Add new modules
 # See https://docs.python.org/3/whatsnew/index.html
-if sys.version_info >= (3, 2):
-    standard_library.extend([
-        'concurrent',
-    ])
-
-if sys.version_info >= (3, 3):
-    standard_library.extend([
-        'ipaddress',
-        'faulthandler',
-        'lzma',
-        'venv',
-    ])
-
-if sys.version_info >= (3, 4):
-    standard_library.extend([
-        'asyncio',
-        'ensurepip',
-        'enum',
-        'pathlib',
-        'selectors',
-        'statistics',
-        'tracemalloc',
-    ])
-
-if sys.version_info >= (3, 5):
-    standard_library.extend([
-        'typing',
-        'zipapp',
-    ])
-
-if sys.version_info >= (3, 6):
-    standard_library.extend([
-        'secrets',
-    ])
-
-if sys.version_info >= (3, 7):
-    standard_library.extend([
-        'contextvars',
-        'dataclasses',
-    ])
-
-# 'macpath' module has been removed from Python 3.8
-if sys.version_info > (3, 7):
-    standard_library.remove('macpath')
-
-# 'dummy_threading' module has been removed from Python 3.9
-if sys.version_info > (3, 8):
-    standard_library.remove('dummy_threading')
-
-# 'symbol' module has been removed from Python 3.10
+# 'symbol' and 'formatter' modules have been removed from Python 3.10
 if sys.version_info >= (3, 10):
     standard_library.remove('symbol')
+    standard_library.remove('formatter')
+
+# 'binhex' module has been removed from Python 3.11
+if sys.version_info >= (3, 11):
+    standard_library.remove('binhex')
+
+# 'smtpd', 'asyncore' and 'asynchat' modules have been removed from Python 3.12
+# https://docs.python.org/dev/whatsnew/3.12.html
+if sys.version_info >= (3, 12):
+    standard_library.remove('distutils')
+    standard_library.remove('imp')
+    standard_library.remove('smtpd')
+    standard_library.remove('asyncore')
+    standard_library.remove('asynchat')
+
+# 'aifc', 'cgi', 'cgitb', 'chunk', 'crypt', 'imghdr', 'lib2to3', 'mailcap', 'nntplib',
+# 'pipes', 'sndhdr', 'sunau', 'telnetlib', 'uu' and 'xdrlib' modules have been removed
+# from Python 3.13
+# https://docs.python.org/dev/whatsnew/3.13.html
+if sys.version_info >= (3, 13):
+    standard_library.remove('aifc')
+    standard_library.remove('cgi')
+    standard_library.remove('cgitb')
+    standard_library.remove('chunk')
+    standard_library.remove('crypt')
+    standard_library.remove('imghdr')
+    standard_library.remove('lib2to3')
+    standard_library.remove('mailcap')
+    standard_library.remove('nntplib')
+    standard_library.remove('pipes')
+    standard_library.remove('sndhdr')
+    standard_library.remove('sunau')
+    standard_library.remove('telnetlib')
+    standard_library.remove('uu')
+    standard_library.remove('xdrlib')
+
+if sys.version_info >= (3, 14):
+    standard_library.extend([
+        'annotationlib',
+    ])
+
+# https://docs.python.org/3.15/whatsnew/3.15.html
+if sys.version_info >= (3, 15):
+    standard_library.remove('sre_compile')
+    standard_library.remove('sre_constants')
+    standard_library.remove('sre_parse')
 
 # Remove tkinter and Easter eggs
 excluded_modules = [
@@ -270,7 +257,6 @@ excluded_modules = [
 def check_missing_modules(expected_modules):
     missing = []
     for module in expected_modules:
-        print('Try to import module ', module)
         try:
             importlib.import_module(module)
         except:

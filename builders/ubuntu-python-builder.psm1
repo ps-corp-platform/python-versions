@@ -1,4 +1,4 @@
-using module "./builders/nix-python-builder.psm1"
+using module "./nix-python-builder.psm1"
 
 class UbuntuPythonBuilder : NixPythonBuilder {
     <#
@@ -37,16 +37,20 @@ class UbuntuPythonBuilder : NixPythonBuilder {
         $configureString += " --enable-shared"
         $configureString += " --enable-optimizations"
 
-        ### Compile with ucs4 for Python 2.x. On 3.x, ucs4 is enabled by default
-        if ($this.Version -lt "3.0.0") {
-            $configureString += " --enable-unicode=ucs4"
+        if ($this.IsFreeThreaded()) {
+            if ($this.Version -lt "3.13.0") {
+                Write-Host "Python versions lower than 3.13.0 do not support free threading"
+                exit 1
+            }
+            $configureString += " --disable-gil"
         }
 
-        ### Compile with support of loadable sqlite extensions. Unavailable for Python 2.*
+        ### Compile with support of loadable sqlite extensions.
         ### Link to documentation (https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.enable_load_extension)
-        if ($this.Version -ge "3.2.0") {
-            $configureString += " --enable-loadable-sqlite-extensions"
-        }
+        $configureString += " --enable-loadable-sqlite-extensions"
+
+        Write-Host "The passed configure options are: "
+        Write-Host $configureString
 
         Execute-Command -Command $configureString
     }
@@ -57,18 +61,15 @@ class UbuntuPythonBuilder : NixPythonBuilder {
         Prepare system environment by installing dependencies and required packages.
         #>
 
-        if (($this.Version -gt "3.0.0") -and ($this.Version -lt "3.5.3")) {
-            Write-Host "Python3 versions lower than 3.5.3 are not supported"
+        if ($this.Version -lt "3.9.0") {
+            Write-Host "Python versions lower than 3.9.0 are not supported"
             exit 1
         }
 
         ### Compile with tkinter support
-        if ($this.Version -gt "3.0.0") {
-            $tkinterInstallString = "sudo apt-get install -y --allow-downgrades python3-tk tk-dev"
-        } else {
-            $tkinterInstallString = "sudo apt install -y python-tk tk-dev"
-        }
+        $tkinterInstallString = "sudo apt-get install -y --allow-downgrades python3-tk tk-dev"
 
+        Execute-Command -Command "sudo apt-get update"
         Execute-Command -Command $tkinterInstallString
 
         ### Install dependent packages
@@ -81,15 +82,20 @@ class UbuntuPythonBuilder : NixPythonBuilder {
             "libsqlite3-dev",
             "libncursesw5-dev",
             "libreadline-dev",
-            "libgdbm-dev"
+            "libgdbm-dev",
+            "liblzma-dev"
         ) | ForEach-Object {
             Execute-Command -Command "sudo apt install -y $_"
         }
 
-        if ($this.Platform -ne "linux-16.04") {
-            ### On Ubuntu-1804, libgdbm-compat-dev has older modules that are no longer in libgdbm-dev
-            Execute-Command -Command "sudo apt install -y libgdbm-compat-dev"
+        ### On Ubuntu-1804, libgdbm-compat-dev has older modules that are no longer in libgdbm-dev
+        Execute-Command -Command "sudo apt install -y libgdbm-compat-dev"
+
+        ### Python 3.10-3.12 need libcrypt-dev (crypt.h) which is not installed by default on Ubuntu 26.04
+        if ([semver]"$($this.Version.Major).$($this.Version.Minor)" -ge [semver]"3.10" -and
+            [semver]"$($this.Version.Major).$($this.Version.Minor)" -lt [semver]"3.13" -and
+            $this.Platform -match "26\.04") {
+            Execute-Command -Command "sudo apt install -y libcrypt-dev"
         }
-        
     }
 }

@@ -1,4 +1,5 @@
 [String] $Architecture = "{{__ARCHITECTURE__}}"
+[String] $HardwareArchitecture = "{{__HARDWARE_ARCHITECTURE__}}"
 [String] $Version = "{{__VERSION__}}"
 [String] $PythonExecName = "{{__PYTHON_EXEC_NAME__}}"
 
@@ -9,13 +10,13 @@ function Get-RegistryVersionFilter {
         [Parameter(Mandatory)][Int32] $MinorVersion
     )
 
-    $archFilter = if ($Architecture -eq 'x86') { "32-bit" } else { "64-bit" }
-    ### Python 2.7 x86 have no architecture postfix
-    if (($Architecture -eq "x86") -and ($MajorVersion -eq 2)) {
-        "Python $MajorVersion.$MinorVersion.\d+$"
-    } else {
-        "Python $MajorVersion.$MinorVersion.*($archFilter)"
-    }
+    # ARM64 Python installer registers as "(ARM64)" in the display name, not "(64-bit)"
+    $archFilter = switch ($Architecture) {
+        'x86'   { "32-bit" }
+        'arm64' { "64-bit|ARM64" }
+        default { "64-bit" }
+    }    
+    "Python $MajorVersion.$MinorVersion.*($archFilter)"
 }
 
 function Remove-RegistryEntries {
@@ -25,19 +26,23 @@ function Remove-RegistryEntries {
         [Parameter(Mandatory)][Int32] $MinorVersion
     )
 
-    $versionFilter = Get-RegistryVersionFilter -Architecture $Architecture -MajorVersion $MajorVersion -MinorVersion $MinorVersion
+    $versionFilter = Get-RegistryVersionFilter -Architecture $HardwareArchitecture -MajorVersion $MajorVersion -MinorVersion $MinorVersion
 
     $regPath = "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products"
-    $regKeys = Get-ChildItem -Path Registry::$regPath -Recurse | Where-Object Property -Ccontains DisplayName
-    foreach ($key in $regKeys) {
-        if ($key.getValue("DisplayName") -match $versionFilter) {
-            Remove-Item -Path $key.PSParentPath -Recurse -Force -Verbose
+    if (Test-Path -Path Registry::$regPath) {
+        $regKeys = Get-ChildItem -Path Registry::$regPath -Recurse | Where-Object Property -Ccontains DisplayName
+        foreach ($key in $regKeys) {
+            if ($key.getValue("DisplayName") -match $versionFilter) {
+                Remove-Item -Path $key.PSParentPath -Recurse -Force -Verbose
+            }
         }
     }
 
     $regPath = "HKEY_CLASSES_ROOT\Installer\Products"
-    Get-ChildItem -Path Registry::$regPath | Where-Object { $_.GetValue("ProductName") -match $versionFilter } | ForEach-Object {
-        Remove-Item Registry::$_ -Recurse -Force -Verbose
+    if (Test-Path -Path Registry::$regPath) {
+        Get-ChildItem -Path Registry::$regPath | Where-Object { $_.GetValue("ProductName") -match $versionFilter } | ForEach-Object {
+            Remove-Item Registry::$_ -Recurse -Force -Verbose
+        }
     }
 
     $uninstallRegistrySections = @(
@@ -57,13 +62,15 @@ function Remove-RegistryEntries {
 function Get-ExecParams {
     param(
         [Parameter(Mandatory)][Boolean] $IsMSI,
+        [Parameter(Mandatory)][Boolean] $IsFreeThreaded,
         [Parameter(Mandatory)][String] $PythonArchPath
     )
 
     if ($IsMSI) {
         "TARGETDIR=$PythonArchPath ALLUSERS=1"
     } else {
-        "DefaultAllUsersTargetDir=$PythonArchPath InstallAllUsers=1"
+        $Include_freethreaded = if ($IsFreeThreaded) { "Include_freethreaded=1" } else { "" }
+        "DefaultAllUsersTargetDir=$PythonArchPath InstallAllUsers=1 $Include_freethreaded"
     }
 }
 
@@ -77,6 +84,7 @@ $PythonVersionPath = Join-Path -Path $PythonToolcachePath -ChildPath $Version
 $PythonArchPath = Join-Path -Path $PythonVersionPath -ChildPath $Architecture
 
 $IsMSI = $PythonExecName -match "msi"
+$IsFreeThreaded = $Architecture -match "-freethreaded"
 
 $MajorVersion = $Version.Split('.')[0]
 $MinorVersion = $Version.Split('.')[1]
@@ -97,7 +105,9 @@ if ($null -ne $InstalledVersions) {
         if (Test-Path -Path $InstalledVersion) {
             Write-Host "Deleting $InstalledVersion..."
             Remove-Item -Path $InstalledVersion -Recurse -Force
-            Remove-Item -Path "$($InstalledVersion.Parent.FullName)/${Architecture}.complete" -Force -Verbose
+            if (Test-Path -Path "$($InstalledVersion.Parent.FullName)/${Architecture}.complete") {
+                Remove-Item -Path "$($InstalledVersion.Parent.FullName)/${Architecture}.complete" -Force -Verbose
+            }
         }
     }
 } else {
@@ -114,16 +124,36 @@ Write-Host "Copy Python binaries to $PythonArchPath"
 Copy-Item -Path ./$PythonExecName -Destination $PythonArchPath | Out-Null
 
 Write-Host "Install Python $Version in $PythonToolcachePath..."
-$ExecParams = Get-ExecParams -IsMSI $IsMSI -PythonArchPath $PythonArchPath
+$ExecParams = Get-ExecParams -IsMSI $IsMSI -IsFreeThreaded $IsFreeThreaded -PythonArchPath $PythonArchPath
 
 cmd.exe /c "cd $PythonArchPath && call $PythonExecName $ExecParams /quiet"
 if ($LASTEXITCODE -ne 0) {
     Throw "Error happened during Python installation"
 }
 
+if ($IsFreeThreaded) {
+    # Delete python.exe and create a symlink to free-threaded exe
+    Remove-Item -Path "$PythonArchPath\python.exe" -Force
+    New-Item -Path "$PythonArchPath\python.exe" -ItemType SymbolicLink -Value "$PythonArchPath\python${MajorVersion}.${MinorVersion}t.exe"
+}
+
+Write-Host "Create `python3` symlink"
+New-Item -Path "$PythonArchPath\python3.exe" -ItemType SymbolicLink -Value "$PythonArchPath\python.exe"
+
 Write-Host "Install and upgrade Pip"
+$Env:PIP_ROOT_USER_ACTION = "ignore"
 $PythonExePath = Join-Path -Path $PythonArchPath -ChildPath "python.exe"
-cmd.exe /c "$PythonExePath -m ensurepip && $PythonExePath -m pip install --upgrade pip"
+cmd.exe /c "$PythonExePath -c ""import pip"" 2>NUL"
+if ($LASTEXITCODE -ne 0) {
+    cmd.exe /c "$PythonExePath -m ensurepip"
+    if ($LASTEXITCODE -ne 0) {
+        Throw "Error happened during ensurepip execution"
+    }
+}
+cmd.exe /c "$PythonExePath -m pip install --upgrade --force-reinstall pip --no-warn-script-location"
+if ($LASTEXITCODE -ne 0) {
+    Throw "Error happened during pip installation / upgrade"
+}
 
 Write-Host "Create complete file"
 New-Item -ItemType File -Path $PythonVersionPath -Name "$Architecture.complete" | Out-Null

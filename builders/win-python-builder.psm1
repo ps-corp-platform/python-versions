@@ -1,4 +1,4 @@
-using module "./builders/python-builder.psm1"
+using module "./python-builder.psm1"
 
 class WinPythonBuilder : PythonBuilder {
     <#
@@ -42,9 +42,7 @@ class WinPythonBuilder : PythonBuilder {
         Return extension for required version of Python executable. 
         #>
 
-        $extension = if ($this.Version -lt "3.5" -and $this.Version -ge "2.5") { ".msi" } else { ".exe" }
-
-        return $extension
+        return ".exe"
     }
 
     [string] GetArchitectureExtension() {
@@ -54,12 +52,10 @@ class WinPythonBuilder : PythonBuilder {
         #>
 
         $ArchitectureExtension = ""
-        if ($this.Architecture -eq "x64") {
-            if ($this.Version -ge "3.5") {
-                $ArchitectureExtension = "-amd64"
-            } else {
-                $ArchitectureExtension = ".amd64"
-            }
+        if ($this.GetHardwareArchitecture() -eq "x64") {
+            $ArchitectureExtension = "-amd64"
+        } elseif ($this.GetHardwareArchitecture() -eq "arm64") {
+                $ArchitectureExtension = "-arm64"
         }
 
         return $ArchitectureExtension
@@ -111,6 +107,7 @@ class WinPythonBuilder : PythonBuilder {
 
         $variablesToReplace = @{
             "{{__ARCHITECTURE__}}" = $this.Architecture;
+            "{{__HARDWARE_ARCHITECTURE__}}" = $this.GetHardwareArchitecture();
             "{{__VERSION__}}" = $this.Version;
             "{{__PYTHON_EXEC_NAME__}}" = $pythonExecName
         }
